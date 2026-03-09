@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .venv/
 bot_errors.log
+*.db-shm
+*.db-wal
