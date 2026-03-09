@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+"""
+Точка входа в Telegram-бота.
+
+Задачи этого файла:
+- загрузить настройки из `.env` (см. `config.py`)
+- подключиться к SQLite (см. `database/db.py`)
+- создать таблицы при первом запуске (см. `database/models.py`)
+- зарегистрировать хендлеры (папка `handlers/`)
+- положить общие зависимости в контекст `Dispatcher`:
+  - db: подключение к SQLite
+  - ai_client: клиент polza.ai (OpenAI SDK с подменённым base_url)
+  - admin_tg_id: TG id администратора для уведомлений об ошибках
+- запустить планировщик (сброс daily_count по расписанию)
+- запустить polling (приём апдейтов от Telegram)
+"""
+
+import asyncio
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+
+from config import load_config
+from database.db import connect
+from database.models import init_db
+from services.ai_service import make_client
+from services.scheduler import start_scheduler
+
+from handlers.start import router as start_router
+from handlers.dialog import router as dialog_router
+from handlers.generate import router as generate_router
+from handlers.cabinet import router as cabinet_router
+from handlers.admin import router as admin_router
+
+
+async def main() -> None:
+    # 1) Загружаем секреты/настройки из окружения.
+    cfg = load_config()
+
+    # 2) Поднимаем соединение с базой SQLite и убеждаемся, что таблицы существуют.
+    db = await connect(cfg.db_path)
+    await init_db(db)
+
+    # 3) Создаём объект бота. ParseMode.HTML нужен, потому что в сообщениях
+    # мы используем <b>...</b> для жирного текста (как в ТЗ).
+    bot = Bot(
+        token=cfg.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    dp = Dispatcher()
+
+    # 4) Dependency Injection (простой способ): кладём общие объекты в dp.
+    # После этого в хендлерах можно просто добавить аргументы `db`, `ai_client`,
+    # `admin_tg_id` в сигнатуру функции, и aiogram сам подставит их из dp.
+    dp["db"] = db
+    dp["ai_client"] = make_client(cfg.polza_api_key)
+    dp["admin_tg_id"] = cfg.admin_tg_id
+
+    # 5) Подключаем роутеры (разделение логики по файлам).
+    dp.include_router(start_router)
+    dp.include_router(dialog_router)
+    dp.include_router(generate_router)
+    dp.include_router(cabinet_router)
+    dp.include_router(admin_router)
+
+    # 6) Запускаем планировщик задач по часовому поясу UTC+7 (настраивается в .env).
+    # Пока в “этапе 1” используются только:
+    # - 00:00 сброс daily_count
+    # - 00:01 отключение доступа тем, у кого подписка истекла и auto_renew=False
+    start_scheduler(bot=bot, db=db, timezone=cfg.timezone)
+
+    # 7) Стартуем polling. Для продакшена можно будет перейти на webhook.
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
