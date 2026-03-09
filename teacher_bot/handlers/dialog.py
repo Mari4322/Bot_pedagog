@@ -17,6 +17,7 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
+from aiogram.filters.state import StateFilter
 from aiogram.types import CallbackQuery, Message
 
 from database import queries as q
@@ -346,9 +347,17 @@ async def hobby_delete(call: CallbackQuery, callback_data: HobbyCb, state: FSMCo
     await call.answer("Удалено")
 
 
-@router.callback_query(HobbyCb.filter(F.action == "select"))
+@router.callback_query(
+    HobbyCb.filter(F.action == "select"),
+    StateFilter(
+        None,
+        Dialog.child_name_input, Dialog.child_rename_input, Dialog.child_age_input,
+        Dialog.hobby_input, Dialog.topic_input, Dialog.anxiety_pick, Dialog.summary,
+    ),
+)
 async def hobby_select(call: CallbackQuery, callback_data: HobbyCb, state: FSMContext, db):
     # Выбор увлечения: сохраняем в FSMContext, идём к вводу темы (Шаг 4).
+    # StateFilter исключает состояния перегенерации — там хобби обрабатывает generate.py.
     tg_id = call.from_user.id
     data = await state.get_data()
     child_id = data.get("child_id")
