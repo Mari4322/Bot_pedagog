@@ -14,7 +14,12 @@ router = Router()
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext, db, admin_tg_id: int):
-    first = await ensure_user(db, message.from_user.id, message.from_user.username)
+    # Игнорируем ботов — не регистрируем в базе, не отвечаем
+    if message.from_user.is_bot:
+        return
+
+    first = await ensure_user(db, message.from_user.id, message.from_user.username,
+                              is_bot=message.from_user.is_bot)
     if message.from_user.id == admin_tg_id:
         await set_admin(db, admin_tg_id, True)
 

@@ -68,8 +68,16 @@ async def set_setting(db: aiosqlite.Connection, key: str, value: str) -> None:
 
 # ─── users ─────────────────────────────────────────────────────────────────
 
-async def ensure_user(db: aiosqlite.Connection, tg_id: int, username: str | None) -> bool:
-    """Returns True if user was created (first visit)."""
+async def ensure_user(db: aiosqlite.Connection, tg_id: int, username: str | None, is_bot: bool = False) -> bool:
+    """
+    Регистрирует пользователя при первом визите.
+    Returns True если пользователь только что создан (первый визит).
+
+    is_bot=True → не создаём запись, возвращаем False (бот не регистрируется).
+    """
+    if is_bot:
+        return False
+
     existed = await _fetchone(db, "SELECT 1 FROM users WHERE tg_id = ? LIMIT 1", (tg_id,))
     if existed:
         await db.execute("UPDATE users SET username = ? WHERE tg_id = ?", (username, tg_id))
@@ -282,3 +290,32 @@ async def deactivate_expired_without_renew(db: aiosqlite.Connection, now_iso: st
     )
     await db.commit()
     return cur.rowcount
+
+
+async def get_users_expiring_tomorrow(
+    db: aiosqlite.Connection,
+    now_iso: str | None = None,
+) -> list[dict]:
+    """
+    Возвращает список пользователей, у которых next_payment_at попадает
+    в окно [сейчас + 23 часа, сейчас + 25 часов] — то есть «ровно через 1 день».
+    Широкое окно (±1 час) защищает от накопленного drift планировщика.
+    """
+    now = datetime.fromisoformat(now_iso) if now_iso else datetime.now(timezone.utc)
+    window_start = (now + timedelta(hours=23)).isoformat()
+    window_end   = (now + timedelta(hours=25)).isoformat()
+
+    rows = await _fetchall(
+        db,
+        """
+        SELECT u.tg_id, s.tariff, s.next_payment_at
+        FROM subscriptions s
+        JOIN users u ON u.tg_id = s.tg_id
+        WHERE s.next_payment_at IS NOT NULL
+          AND s.next_payment_at >= ?
+          AND s.next_payment_at <= ?
+          AND u.is_active = 1
+        """,
+        (window_start, window_end),
+    )
+    return [dict(r) for r in rows]

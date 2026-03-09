@@ -28,3 +28,7 @@ class AnxietyCb(CallbackData, prefix="anx"):
 class ModelCb(CallbackData, prefix="model"):
     model_id: str
 
+
+class AdminCb(CallbackData, prefix="adm"):
+    action: str  # change_model | get_users | get_children | get_logs | add_admin | delete_admin | back_to_menu
+
