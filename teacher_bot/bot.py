@@ -21,6 +21,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from config import load_config
 from database.db import connect
@@ -80,7 +81,19 @@ async def main() -> None:
         balance_threshold=cfg.balance_threshold,
     )
 
-    # 7) Стартуем polling. Для продакшена можно будет перейти на webhook.
+    # 7) Регистрируем команды в меню Telegram (видны всем пользователям).
+    await bot.set_my_commands(
+        commands=[
+            BotCommand(command="start",      description="Начать / вернуться в главное меню"),
+            BotCommand(command="help",       description="Краткая инструкция по боту"),
+            BotCommand(command="cabinet",    description="Личный кабинет (тариф, лимиты)"),
+            BotCommand(command="pay",        description="Оплатить или сменить тариф"),
+            BotCommand(command="cancel_sub", description="Отменить подписку"),
+        ],
+        scope=BotCommandScopeDefault(),
+    )
+
+    # 8) Стартуем polling. Для продакшена можно будет перейти на webhook.
     await dp.start_polling(bot)
 
 
