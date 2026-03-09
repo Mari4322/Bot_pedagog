@@ -86,7 +86,7 @@ def regen_comment_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Пропустить", callback_data=SimpleCb(action="skip_comment").pack())],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data=NavCb(to="regen_back").pack())],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data=NavCb(to="regen_hobby_back").pack())],
         ]
     )
 

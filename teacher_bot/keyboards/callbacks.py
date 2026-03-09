@@ -14,7 +14,7 @@ class HobbyCb(CallbackData, prefix="hobby"):
 
 
 class NavCb(CallbackData, prefix="nav"):
-    to: str  # step1 | step2 | step3 | step4 | step5 | summary | regen_back
+    to: str  # step1 | step2 | step3 | step4 | step5 | summary | regen_back | regen_hobby_back | regen_comment_back
 
 
 class SimpleCb(CallbackData, prefix="s"):

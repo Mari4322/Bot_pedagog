@@ -392,8 +392,9 @@ async def _show_regen_summary(*, call: CallbackQuery, state: FSMContext, db) -> 
     await state.set_state(Dialog.regen_summary)
 
 
-@router.callback_query(Dialog.regen_comment, NavCb.filter(F.to == "regen_back"))
-async def regen_back_to_answer(call: CallbackQuery, state: FSMContext):
+# «Назад» на экране выбора хобби → возврат к ответу ИИ
+@router.callback_query(Dialog.regen_pick_hobby, NavCb.filter(F.to == "regen_back"))
+async def regen_back_to_answer_from_hobby(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     last = data.get("last_ai_text")
     if last:
@@ -401,6 +402,20 @@ async def regen_back_to_answer(call: CallbackQuery, state: FSMContext):
         await state.set_state(Dialog.summary)
         return
     await call.answer()
+
+
+# «Назад» на экране комментария → возврат к выбору хобби
+@router.callback_query(Dialog.regen_comment, NavCb.filter(F.to == "regen_hobby_back"))
+async def regen_back_to_hobby(call: CallbackQuery, state: FSMContext, db):
+    tg_id = call.from_user.id
+    data = await state.get_data()
+    child_id = data.get("child_id")
+    hobbies = await q.list_hobbies(db, child_id, tg_id)
+    await call.message.edit_text(
+        "Выберите увлечение для нового объяснения:",
+        reply_markup=regen_pick_hobby_kb(hobbies),
+    )
+    await state.set_state(Dialog.regen_pick_hobby)
 
 
 @router.callback_query(Dialog.regen_summary, NavCb.filter(F.to == "regen_comment_back"))
