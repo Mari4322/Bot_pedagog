@@ -81,6 +81,13 @@ async def _do_generate(
 ) -> None:
     tg_id = call.from_user.id
 
+    # Боты не могут делать запросы к нейросети — молча игнорируем
+    if call.from_user.is_bot:
+        _log.warning("Попытка запроса к ИИ от бота tg_id=%d username=%s — отклонено",
+                     tg_id, call.from_user.username)
+        await call.answer("Боты не могут использовать этот бот.", show_alert=True)
+        return
+
     # Проверяем лимит до запроса к ИИ
     access = await q.get_access_state(db, tg_id)
     if not access.can_generate:
