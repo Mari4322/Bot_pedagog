@@ -4,9 +4,12 @@ from __future__ import annotations
 Планировщик задач APScheduler (timezone UTC+7).
 
 Задачи:
-  00:00 — сброс daily_count = 0 для всех пользователей
-  00:01 — для подписок: если next_payment_at < сейчас и auto_renew=False → is_active=False
-  00:02 — для подписок: если до next_payment_at остался ~1 день → напоминание пользователю
+  00:00    — сброс daily_count = 0 для всех пользователей
+  00:01    — для подписок: если next_payment_at < сейчас и auto_renew=False → is_active=False
+  00:02    — для подписок: если до next_payment_at остался ~1 день → напоминание пользователю
+  каждый час (*/1) — проверка баланса polza.ai:
+               • при балансе ниже порога → предупреждение администратору
+               • при ошибке запроса      → уведомление администратору
 """
 
 import logging
@@ -24,6 +27,7 @@ from database.queries import (
     get_users_expiring_tomorrow,
     reset_daily_counts,
 )
+from services.balance_service import get_balance
 
 _log = logging.getLogger("scheduler")
 
@@ -90,11 +94,53 @@ async def _task_remind_expiring(bot: Bot, db: aiosqlite.Connection) -> None:
         _log.exception("[scheduler] Ошибка в задаче напоминаний: %s", e)
 
 
+async def _task_check_balance(
+    bot: Bot,
+    admin_tg_id: int,
+    polza_api_key: str,
+    balance_threshold: float,
+) -> None:
+    """
+    Каждый час — запрашиваем баланс polza.ai.
+    Если баланс ниже порога → предупреждение админу.
+    Если запрос не удался    → уведомление админу.
+    """
+    try:
+        balance = await get_balance(polza_api_key)
+        _log.info("[scheduler] Баланс polza.ai: %.2f руб. (порог: %.2f)", balance, balance_threshold)
+
+        if balance < balance_threshold:
+            _log.warning("[scheduler] Баланс ниже порога! %.2f < %.2f", balance, balance_threshold)
+            try:
+                await bot.send_message(
+                    admin_tg_id,
+                    f"⚠️ <b>Внимание! Низкий баланс polza.ai</b>\n\n"
+                    f"💰 Текущий баланс: <b>{balance:.2f} руб.</b>\n"
+                    f"🔔 Порог предупреждения: <b>{balance_threshold:.0f} руб.</b>\n\n"
+                    f"Пополните счёт, чтобы бот продолжал работать.",
+                )
+            except Exception as send_err:
+                _log.warning("[scheduler] Не удалось уведомить админа о балансе: %s", send_err)
+
+    except RuntimeError as e:
+        _log.error("[scheduler] Не удалось проверить баланс: %s", e)
+        try:
+            await bot.send_message(
+                admin_tg_id,
+                f"❗ <b>Не удалось проверить баланс polza.ai</b>\n\n{e}",
+            )
+        except Exception:
+            pass
+
+
 def start_scheduler(
     *,
     bot: Bot,
     db: aiosqlite.Connection,
     timezone: str,
+    admin_tg_id: int,
+    polza_api_key: str,
+    balance_threshold: float,
 ) -> AsyncIOScheduler:
     tz = ZoneInfo(timezone)
     scheduler = AsyncIOScheduler(timezone=tz)
@@ -126,6 +172,20 @@ def start_scheduler(
         replace_existing=True,
     )
 
+    # Каждый час — проверка баланса polza.ai
+    scheduler.add_job(
+        _task_check_balance,
+        CronTrigger(minute=0, timezone=tz),   # в начале каждого часа
+        kwargs={
+            "bot": bot,
+            "admin_tg_id": admin_tg_id,
+            "polza_api_key": polza_api_key,
+            "balance_threshold": balance_threshold,
+        },
+        id="check_balance",
+        replace_existing=True,
+    )
+
     scheduler.start()
-    _log.info("[scheduler] Запущен (timezone=%s), задач: 3", timezone)
+    _log.info("[scheduler] Запущен (timezone=%s), задач: 4", timezone)
     return scheduler

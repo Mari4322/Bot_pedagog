@@ -57,6 +57,8 @@ async def main() -> None:
     dp["db"] = db
     dp["ai_client"] = make_client(cfg.polza_api_key)
     dp["admin_tg_id"] = cfg.admin_tg_id
+    dp["polza_api_key"] = cfg.polza_api_key          # нужен для /balance в admin хендлере
+    dp["balance_threshold"] = cfg.balance_threshold  # порог для отображения предупреждения
 
     # 5) Подключаем роутеры (разделение логики по файлам).
     dp.include_router(start_router)
@@ -69,7 +71,14 @@ async def main() -> None:
     # Пока в “этапе 1” используются только:
     # - 00:00 сброс daily_count
     # - 00:01 отключение доступа тем, у кого подписка истекла и auto_renew=False
-    start_scheduler(bot=bot, db=db, timezone=cfg.timezone)
+    start_scheduler(
+        bot=bot,
+        db=db,
+        timezone=cfg.timezone,
+        admin_tg_id=cfg.admin_tg_id,
+        polza_api_key=cfg.polza_api_key,
+        balance_threshold=cfg.balance_threshold,
+    )
 
     # 7) Стартуем polling. Для продакшена можно будет перейти на webhook.
     await dp.start_polling(bot)

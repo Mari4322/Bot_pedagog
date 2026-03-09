@@ -28,6 +28,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from database.queries import get_user, set_admin, set_setting
 from keyboards.admin_kb import admin_input_cancel_kb, admin_menu_kb, models_kb
 from keyboards.callbacks import AdminCb, ModelCb
+from services.balance_service import get_balance
 from utils.exports import export_children, export_logs, export_users
 
 router = Router()
@@ -189,6 +190,42 @@ async def get_logs_btn(call: CallbackQuery, db):
     filename, content = await export_logs(db)
     await call.message.answer_document(BufferedInputFile(content, filename=filename),
                                        caption="📋 Логи запросов")
+
+
+# ─── Баланс polza.ai (/balance и кнопка) ───────────────────────────────────
+
+async def _format_balance_text(polza_api_key: str, balance_threshold: float) -> str:
+    """Запрашивает баланс и возвращает готовый текст для отправки."""
+    try:
+        balance = await get_balance(polza_api_key)
+        if balance < balance_threshold:
+            status = f"⚠️ <b>Ниже порога!</b> (порог: {balance_threshold:.0f} руб.)"
+        else:
+            status = f"✅ В норме (порог: {balance_threshold:.0f} руб.)"
+        return (
+            f"💰 <b>Баланс polza.ai</b>\n\n"
+            f"Текущий баланс: <b>{balance:.2f} руб.</b>\n"
+            f"Статус: {status}"
+        )
+    except RuntimeError as e:
+        return f"❗ <b>Не удалось получить баланс</b>\n\n{e}"
+
+
+@router.message(Command("balance"))
+async def balance_cmd(message: Message, db, polza_api_key: str, balance_threshold: float):
+    if not await _require_admin(message, db):
+        return
+    text = await _format_balance_text(polza_api_key, balance_threshold)
+    await message.answer(text, reply_markup=admin_menu_kb())
+
+
+@router.callback_query(AdminCb.filter(F.action == "balance"))
+async def balance_btn(call: CallbackQuery, db, polza_api_key: str, balance_threshold: float):
+    if not await _require_admin_call(call, db):
+        return
+    await call.answer()
+    text = await _format_balance_text(polza_api_key, balance_threshold)
+    await call.message.edit_text(text, reply_markup=admin_menu_kb())
 
 
 # ─── Добавление администратора (/add_admin и кнопка) ───────────────────────
