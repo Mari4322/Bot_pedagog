@@ -6,13 +6,9 @@ from __future__ import annotations
 Ключевые правила:
 - Счётчик daily_count увеличивается ТОЛЬКО при успешном ответе ИИ.
 - При ЛЮБОЙ ошибке API счётчик НЕ увеличивается.
-- Обработка ошибок строго по ТЗ:
-    401 → лог + уведомление админу
-    402 → лог + уведомление админу
-    408 → сообщение пользователю «Превышено время ожидания»
-    429 → повтор уже сделан в ai_service.py; сюда попадает только если попытки исчерпаны
-    500 → лог + сообщение пользователю
-    502/503 → повтор уже сделан в ai_service.py; сюда попадает только если попытки исчерпаны
+- Пользователь НИКОГДА не видит технических деталей (коды ошибок, названия моделей и т.д.)
+  — только вежливое сообщение с просьбой попробовать ещё раз.
+- Все технические детали идут в лог-файл и/или личное сообщение администратору.
 """
 
 import logging
@@ -49,6 +45,9 @@ if not _log.handlers:
 
 
 router = Router()
+
+# Единственное сообщение об ошибке, которое видит пользователь при любой проблеме с ИИ
+_USER_ERROR_MSG = "Извините, что-то пошло не так. Попробуйте ещё раз 🙏"
 
 
 # ─── Вспомогательные функции ───────────────────────────────────────────────
@@ -131,37 +130,31 @@ async def _do_generate(
 
     # ── 408 — таймаут ─────────────────────────────────────────────────────
     except TimeoutAPIError:
-        _log.warning("408 Timeout при генерации для tg_id=%d", tg_id)
-        # Счётчик НЕ увеличивается
-        await call.message.edit_text(
-            "⏱ Превышено время ожидания. Попробуйте ещё раз."
-        )
+        _log.warning("408 Timeout tg_id=%d model=%s", tg_id, model)
+        await call.message.edit_text(_USER_ERROR_MSG)
         return
 
     # ── 500 — ошибка сервера ──────────────────────────────────────────────
     except ServerAPIError as e:
-        _log.error("500 Server error для tg_id=%d: %s", tg_id, e.message)
-        # Счётчик НЕ увеличивается
+        _log.error("500 Server error tg_id=%d model=%s: %s", tg_id, model, e.message)
         await _notify_admin(call, admin_tg_id,
-                            f"⚠️ polza.ai ошибка 500 (tg_id={tg_id}): {e.message}")
-        await call.message.edit_text(
-            "🚫 Ошибка на стороне сервиса ИИ. Уже разбираемся. Попробуйте чуть позже."
-        )
+                            f"⚠️ polza.ai 500 | tg_id={tg_id} | model={model}\n{e.message}")
+        await call.message.edit_text(_USER_ERROR_MSG)
         return
 
-    # ── APIStatusError: 400 (модель не найдена) → fallback; 401/402 → уведомление ─
+    # ── APIStatusError ─────────────────────────────────────────────────────
     except APIStatusError as e:
         code = e.status_code
-        _log.error("APIStatusError %d для tg_id=%d: %s", code, tg_id, e.message)
+        _log.error("APIStatusError %d tg_id=%d model=%s: %s", code, tg_id, model, e.message)
 
-        # Модель не найдена — переключаем на fallback и пробуем один раз
+        # 400 — модель не найдена → тихий fallback, пользователь не замечает
         if code == 400 and (
             "не найдена" in (e.message or "")
             or "not found" in (e.message or "").lower()
         ):
             if model != FALLBACK_MODEL:
                 await q.set_setting(db, "current_model", FALLBACK_MODEL)
-                _log.info("Переключили current_model %s → %s", model, FALLBACK_MODEL)
+                _log.info("Автосмена модели %s → %s", model, FALLBACK_MODEL)
                 try:
                     result = await generate_response(
                         client=ai_client,
@@ -173,7 +166,6 @@ async def _do_generate(
                         anxiety_level=int(anxiety),
                         comment=comment,
                     )
-                    # Успех после fallback — сохраняем и показываем
                     await _save_and_show(
                         call=call, state=state, db=db,
                         tg_id=tg_id, child=child,
@@ -182,100 +174,54 @@ async def _do_generate(
                         result=result,
                     )
                     return
-                except TimeoutAPIError:
-                    await call.message.edit_text("⏱ Превышено время ожидания. Попробуйте ещё раз.")
-                    return
-                except ServerAPIError as se:
-                    _log.error("500 при fallback для tg_id=%d: %s", tg_id, se.message)
-                    await _notify_admin(call, admin_tg_id,
-                                        f"⚠️ polza.ai 500 (fallback, tg_id={tg_id}): {se.message}")
-                    await call.message.edit_text(
-                        "🚫 Ошибка на стороне сервиса ИИ. Попробуйте чуть позже."
-                    )
-                    return
                 except Exception as retry_e:
-                    _log.exception("Fallback тоже упал для tg_id=%d: %s", tg_id, retry_e)
-                    await call.message.edit_text(
-                        "Выбранная модель недоступна в сервисе. Админ: смените модель через /change_model."
-                    )
+                    _log.exception("Fallback тоже упал tg_id=%d: %s", tg_id, retry_e)
+                    await _notify_admin(call, admin_tg_id,
+                                        f"⚠️ Fallback model тоже упал | tg_id={tg_id}\n{type(retry_e).__name__}: {retry_e}")
+                    await call.message.edit_text(_USER_ERROR_MSG)
                     return
-            else:
-                await call.message.edit_text(
-                    "Модель недоступна. Админ: смените модель через /change_model."
-                )
-                return
+            # fallback уже использован — просто показываем извинение
+            await call.message.edit_text(_USER_ERROR_MSG)
+            return
 
-        # 401 — неверный API-ключ
+        # 401 — неверный API-ключ → только админу
         if code == 401:
-            _log.error("401 Unauthorized для tg_id=%d", tg_id)
             await _notify_admin(call, admin_tg_id,
-                                f"🔑 polza.ai ошибка 401 (неверный API-ключ). tg_id={tg_id}")
-            await call.message.edit_text(
-                "⛔ Ошибка аутентификации сервиса ИИ. Администратор уже уведомлён."
-            )
+                                f"🔑 polza.ai 401 (неверный API-ключ) | tg_id={tg_id}")
+            await call.message.edit_text(_USER_ERROR_MSG)
             return
 
-        # 402 — нет средств
+        # 402 — нет средств → только админу
         if code == 402:
-            _log.error("402 Payment Required для tg_id=%d", tg_id)
             await _notify_admin(call, admin_tg_id,
-                                f"💳 polza.ai ошибка 402 (недостаточно средств). tg_id={tg_id}")
-            await call.message.edit_text(
-                "💳 Сервис ИИ временно недоступен. Администратор уже уведомлён."
-            )
+                                f"💳 polza.ai 402 (недостаточно средств) | tg_id={tg_id}")
+            await call.message.edit_text(_USER_ERROR_MSG)
             return
 
-        # 403 — доступ запрещён
-        if code == 403:
-            _log.error("403 Forbidden для tg_id=%d", tg_id)
-            await _notify_admin(call, admin_tg_id,
-                                f"🚫 polza.ai ошибка 403 (доступ запрещён). tg_id={tg_id}")
-            await call.message.edit_text("🚫 Доступ к сервису ИИ запрещён. Попробуйте позже.")
-            return
-
-        # 429 — исчерпаны повторные попытки (retry уже сделан в ai_service.py)
-        if code == 429:
-            _log.warning("429 Rate limit исчерпан для tg_id=%d", tg_id)
-            await call.message.edit_text(
-                "⏳ Сервис перегружен. Попробуйте ещё раз через несколько минут."
-            )
-            return
-
-        # 502 / 503 — исчерпаны повторные попытки
-        if code in (502, 503):
-            _log.warning("%d Unavailable исчерпан для tg_id=%d", code, tg_id)
-            await call.message.edit_text(
-                "🔧 Сервис ИИ временно недоступен. Попробуйте позже."
-            )
-            return
-
-        # Прочие коды
-        await call.message.edit_text("❌ Ошибка при обращении к ИИ. Попробуйте позже.")
-        return
-
-    # ── 429 (RateLimitError) — все retry исчерпаны ───────────────────────
-    except RateLimitError as e:
-        _log.error("RateLimitError (все попытки исчерпаны) для tg_id=%d: %s", tg_id, e)
-        await call.message.edit_text(
-            "⏳ Сервис перегружен. Попробуйте ещё раз через несколько минут."
-        )
-        return
-
-    # ── Проблемы соединения ───────────────────────────────────────────────
-    except APIConnectionError as e:
-        _log.error("APIConnectionError (все попытки исчерпаны) для tg_id=%d: %s", tg_id, e)
-        await call.message.edit_text(
-            "🌐 Не удалось подключиться к сервису ИИ. Проверьте позже."
-        )
-        return
-
-    # ── Всё прочее ────────────────────────────────────────────────────────
-    except Exception as e:
-        _log.exception("Неожиданная ошибка генерации для tg_id=%d: %s: %s",
-                       tg_id, type(e).__name__, e)
+        # 403 / 429 / 502 / 503 и прочие — лог уже есть, пользователю только извинение
         await _notify_admin(call, admin_tg_id,
-                            f"❗ Неожиданная ошибка генерации (tg_id={tg_id}): {type(e).__name__}: {e}")
-        await call.message.edit_text("❌ Ошибка при обращении к ИИ. Попробуйте позже.")
+                            f"polza.ai {code} | tg_id={tg_id} | model={model}\n{e.message}")
+        await call.message.edit_text(_USER_ERROR_MSG)
+        return
+
+    # ── 429 RateLimitError — все retry исчерпаны ─────────────────────────
+    except RateLimitError as e:
+        _log.error("429 RateLimit exhausted tg_id=%d: %s", tg_id, e)
+        await call.message.edit_text(_USER_ERROR_MSG)
+        return
+
+    # ── Нет соединения ───────────────────────────────────────────────────
+    except APIConnectionError as e:
+        _log.error("APIConnectionError exhausted tg_id=%d: %s", tg_id, e)
+        await call.message.edit_text(_USER_ERROR_MSG)
+        return
+
+    # ── Любая неожиданная ошибка ─────────────────────────────────────────
+    except Exception as e:
+        _log.exception("Unexpected error tg_id=%d: %s: %s", tg_id, type(e).__name__, e)
+        await _notify_admin(call, admin_tg_id,
+                            f"❗ Неожиданная ошибка | tg_id={tg_id}\n{type(e).__name__}: {e}")
+        await call.message.edit_text(_USER_ERROR_MSG)
         return
 
     # ── Успех: сохраняем лог, увеличиваем счётчик, показываем ответ ──────
