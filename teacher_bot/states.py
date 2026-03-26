@@ -5,6 +5,7 @@ class Dialog(StatesGroup):
     child_name_input = State()
     child_rename_input = State()
     child_age_input = State()
+    hobby_pick = State()
     hobby_input = State()
     topic_input = State()
     anxiety_pick = State()
@@ -13,4 +14,3 @@ class Dialog(StatesGroup):
     regen_pick_hobby = State()
     regen_comment = State()
     regen_summary = State()
-
