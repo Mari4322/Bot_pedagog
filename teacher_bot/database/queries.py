@@ -292,8 +292,7 @@ async def deactivate_expired_without_renew(db: aiosqlite.Connection, now_iso: st
     return cur.rowcount
 
 
-async def get_users_expiring_tomorrow(
-    db: aiosqlite.Connection,
+async def get_users_expiring_tomorrow(    db: aiosqlite.Connection,
     now_iso: str | None = None,
 ) -> list[dict]:
     """
@@ -319,3 +318,46 @@ async def get_users_expiring_tomorrow(
         (window_start, window_end),
     )
     return [dict(r) for r in rows]
+
+
+# ─── payment / subscription management ────────────────────────────────────────
+
+async def update_subscription(
+    db: aiosqlite.Connection,
+    tg_id: int,
+    tariff: str,
+    daily_limit: int | None,
+) -> None:
+    """
+    Вызывается после успешной оплаты (вебхук Продамуса).
+    Обновляет подписку и активирует пользователя.
+    """
+    now = datetime.now(timezone.utc)
+    paid_at      = now.isoformat()
+    next_payment = (now + timedelta(days=30)).isoformat()
+
+    await db.execute(
+        """
+        UPDATE subscriptions
+        SET tariff = ?, paid_at = ?, next_payment_at = ?, auto_renew = 1, total_cost = 0
+        WHERE tg_id = ?
+        """,
+        (tariff, paid_at, next_payment, tg_id),
+    )
+    await db.execute(
+        "UPDATE users SET is_active = 1, daily_limit = ? WHERE tg_id = ?",
+        (daily_limit, tg_id),
+    )
+    await db.commit()
+
+
+async def cancel_subscription(db: aiosqlite.Connection, tg_id: int) -> None:
+    """
+    Отписка: ставим auto_renew = False.
+    Доступ сохраняется до next_payment_at — планировщик 00:01 сам отключит.
+    """
+    await db.execute(
+        "UPDATE subscriptions SET auto_renew = 0 WHERE tg_id = ?",
+        (tg_id,),
+    )
+    await db.commit()

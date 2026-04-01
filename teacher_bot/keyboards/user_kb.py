@@ -3,6 +3,8 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from keyboards.callbacks import AnxietyCb, ChildCb, HobbyCb, NavCb, SimpleCb
+from keyboards.callbacks import TariffCb, PayConfirmCb, CancelSubCb
+from tariffs import PAID_TARIFFS
 
 
 def step1_children_kb(children: list[dict]) -> InlineKeyboardMarkup:
@@ -96,6 +98,53 @@ def regen_summary_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Сгенерировать", callback_data=SimpleCb(action="regen_generate").pack())],
             [InlineKeyboardButton(text="◀️ Назад", callback_data=NavCb(to="regen_comment_back").pack())],
+        ]
+    )
+
+
+# ─── /pay — выбор тарифа ───────────────────────────────────────────────────
+
+def pay_tariffs_kb() -> InlineKeyboardMarkup:
+    """Кнопки платных тарифов для /pay."""
+    rows = [
+        [InlineKeyboardButton(
+            text=f"📦 {t.name} — {t.description}",
+            callback_data=TariffCb(key=t.key).pack(),
+        )]
+        for t in PAID_TARIFFS
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def pay_confirm_change_kb(tariff_name: str) -> InlineKeyboardMarkup:
+    """Подтверждение смены тарифа (если подписка уже активна)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"✅ Да, сменить на «{tariff_name}»",
+                callback_data=PayConfirmCb(action="yes").pack(),
+            )],
+            [InlineKeyboardButton(
+                text="◀️ Назад",
+                callback_data=PayConfirmCb(action="no").pack(),
+            )],
+        ]
+    )
+
+
+# ─── /cancel_sub — подтверждение отписки ───────────────────────────────────
+
+def cancel_sub_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="✅ Да, отписаться",
+                callback_data=CancelSubCb(action="yes").pack(),
+            )],
+            [InlineKeyboardButton(
+                text="◀️ Назад",
+                callback_data=CancelSubCb(action="no").pack(),
+            )],
         ]
     )
 

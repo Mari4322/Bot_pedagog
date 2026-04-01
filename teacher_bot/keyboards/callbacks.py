@@ -32,3 +32,15 @@ class ModelCb(CallbackData, prefix="model"):
 class AdminCb(CallbackData, prefix="adm"):
     action: str  # change_model | get_users | get_children | get_logs | add_admin | delete_admin | back_to_menu
 
+
+class TariffCb(CallbackData, prefix="tariff"):
+    key: str     # basic | premium
+
+
+class PayConfirmCb(CallbackData, prefix="payconfirm"):
+    action: str  # yes | no
+
+
+class CancelSubCb(CallbackData, prefix="cancelsub"):
+    action: str  # yes | no
+

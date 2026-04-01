@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 
+import uvicorn
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -28,6 +30,7 @@ from database.db import connect
 from database.models import init_db
 from services.ai_service import make_client
 from services.scheduler import start_scheduler
+from services import webhook as webhook_service
 
 from handlers.start import router as start_router
 from handlers.dialog import router as dialog_router
@@ -60,6 +63,8 @@ async def main() -> None:
     dp["admin_tg_id"] = cfg.admin_tg_id
     dp["polza_api_key"] = cfg.polza_api_key          # нужен для /balance в admin хендлере
     dp["balance_threshold"] = cfg.balance_threshold  # порог для отображения предупреждения
+    dp["prodamus_secret_key"] = cfg.prodamus_secret_key  # для генерации платёжных ссылок
+    dp["webhook_url"] = cfg.webhook_url                  # публичный URL сервера
 
     # 5) Подключаем роутеры (разделение логики по файлам).
     dp.include_router(start_router)
@@ -93,8 +98,26 @@ async def main() -> None:
         scope=BotCommandScopeDefault(),
     )
 
-    # 8) Стартуем polling. Для продакшена можно будет перейти на webhook.
-    await dp.start_polling(bot)
+    # 8) Инициализируем FastAPI-сервер для вебхуков Продамуса и запускаем параллельно.
+    webhook_service.setup(
+        bot=bot,
+        db=db,
+        prodamus_secret_key=cfg.prodamus_secret_key,
+    )
+    uvicorn_config = uvicorn.Config(
+        app=webhook_service.app,
+        host="0.0.0.0",
+        port=cfg.webhook_port,
+        log_level="warning",
+        loop="none",          # используем уже запущенный asyncio loop
+    )
+    uvicorn_server = uvicorn.Server(uvicorn_config)
+
+    # 9) Запускаем polling и uvicorn конкурентно в одном event loop.
+    await asyncio.gather(
+        dp.start_polling(bot),
+        uvicorn_server.serve(),
+    )
 
 
 if __name__ == "__main__":
