@@ -35,16 +35,16 @@ TARIFFS: dict[str, Tariff] = {
     "basic": Tariff(
         key="basic",
         name="Базовый",
-        daily_limit=None,       # безлимит
+        daily_limit=5,          # 5 запросов в день
         price=1.0,              # 1 руб. (тестовая цена)
-        description="Безлимит · 1 руб / 30 дней",
+        description="5 запросов / день · 1 руб / 30 дней",
     ),
     "premium": Tariff(
         key="premium",
         name="Премиум",
-        daily_limit=None,       # безлимит
+        daily_limit=8,          # 8 запросов в день
         price=2.0,              # 2 руб. (тестовая цена)
-        description="Безлимит + приоритет · 2 руб / 30 дней",
+        description="8 запросов / день · 2 руб / 30 дней",
     ),
 }
 
