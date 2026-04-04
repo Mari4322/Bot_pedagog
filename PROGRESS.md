@@ -147,12 +147,44 @@ WEBHOOK_PORT=8080      # порт FastAPI
 
 ---
 
-## Этап 3 — Планируется 📋
+## Этап 3 — В работе 🔄
 
-### 1. Бэкапы на S3 (Beget)
-- Перенести бэкапы с локального crontab на S3-хранилище Beget
-- Ежедневный бэкап БД на S3
-- Скрипт ротации: хранить все бэкапы за последние 2 месяца, далее оставлять только по одному за последний день каждого месяца
+### 1. Бэкапы на S3 (Beget) ✅
+
+#### Что сделано
+- `utils/backup.py` — скрипт бэкапа БД на S3 Beget:
+  - Загружает `bot.db` в бакет с именем `backups/bot_YYYY-MM-DD.db`
+  - Политика ротации:
+    - Последние 2 месяца — все бэкапы хранятся полностью
+    - Старше 2 месяцев — оставляем только первый и последний день каждого месяца, остальные удаляются
+- `requirements.txt`: добавлен `boto3==1.35.0`
+- `.env.example`: добавлены переменные `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_PREFIX`
+
+#### Настройка на сервере
+1. Установить зависимости:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Добавить в `.env` на сервере:
+   ```
+   S3_ENDPOINT=https://s3.ru1.storage.beget.cloud
+   S3_BUCKET=cbfe50c1dad7-bot-pedagog
+   S3_ACCESS_KEY=<ваш ключ>
+   S3_SECRET_KEY=<ваш секрет>
+   S3_PREFIX=backups/
+   ```
+3. Настроить crontab (бэкап каждый день в 03:00):
+   ```bash
+   crontab -e
+   ```
+   Добавить строку:
+   ```
+   0 3 * * * cd /home/bot/teacher_bot && /home/bot/teacher_bot/venv/bin/python3 utils/backup.py >> /home/bot/backups/backup.log 2>&1
+   ```
+4. Проверить вручную:
+   ```bash
+   cd /home/bot/teacher_bot && python3 utils/backup.py
+   ```
 
 ### 2. Бот для мессенджера MAX
 - Отдельный проект (`max_bot/`) на базе библиотеки `maxapi` или `umaxbot`
