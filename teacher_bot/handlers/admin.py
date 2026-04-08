@@ -140,6 +140,10 @@ async def edit_prompt_btn(call: CallbackQuery, db):
     # Показываем промпт (обрезаем если слишком длинный)
     preview = current_prompt[:4000] + ("..." if len(current_prompt) > 4000 else "")
     
+    # Экранируем HTML-символы чтобы Telegram не парсил их как теги
+    import html
+    preview_escaped = html.escape(preview)
+    
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Изменить промпт", callback_data="admin_edit_prompt")],
@@ -148,7 +152,7 @@ async def edit_prompt_btn(call: CallbackQuery, db):
 
     await call.message.edit_text(
         f"📝 <b>Текущий системный промпт:</b>\n\n"
-        f"<code>{preview}</code>\n\n"
+        f"<code>{preview_escaped}</code>\n\n"
         f"Символов: {len(current_prompt)}",
         reply_markup=kb,
     )
@@ -403,6 +407,10 @@ async def cmd_prompt(message: Message, state: FSMContext, db, admin_tg_id: int):
     # Показываем промпт (обрезаем если слишком длинный для одного сообщения)
     preview = current_prompt[:4000] + ("..." if len(current_prompt) > 4000 else "")
     
+    # Экранируем HTML-символы
+    import html
+    preview_escaped = html.escape(preview)
+    
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Изменить промпт", callback_data="admin_edit_prompt")],
@@ -411,7 +419,7 @@ async def cmd_prompt(message: Message, state: FSMContext, db, admin_tg_id: int):
 
     await message.answer(
         f"📝 <b>Текущий системный промпт:</b>\n\n"
-        f"<code>{preview}</code>\n\n"
+        f"<code>{preview_escaped}</code>\n\n"
         f"Символов: {len(current_prompt)}",
         reply_markup=kb,
     )
