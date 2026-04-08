@@ -159,7 +159,7 @@ async def show_summary(*, call: CallbackQuery, state: FSMContext, db):
     await state.set_state(Dialog.summary)
 
 
-@router.callback_query(NavCb.filter())
+@router.callback_query(NavCb.filter(F.to.in_({"step1", "step2", "step3", "step4", "step5", "summary"})))
 async def on_nav(call: CallbackQuery, callback_data: NavCb, state: FSMContext, db):
     # Единая точка обработки кнопок “Назад” (и других переходов).
     to = callback_data.to
