@@ -333,23 +333,32 @@ async def update_subscription(
     Обновляет подписку и активирует пользователя.
     
     Логика продления:
-      - Если old_next_payment_at ещё не истёк → new_next = old_next + 30 дней
-      - Если истёк или NULL → new_next = now + 30 дней
-    Таким образом, досрочная оплата сохраняет оставшиеся дни.
+      - Смена тарифа (basic → premium или наоборот):
+        new_next = now + 30 дней (новый период с момента оплаты)
+      - Продление текущего тарифа:
+        - Если old_next_payment_at ещё не истёк → new_next = old_next + 30 дней
+        - Если истёк или NULL → new_next = now + 30 дней
     """
     now = datetime.now(timezone.utc)
     paid_at = now.isoformat()
 
-    # Получаем текущую дату next_payment_at
+    # Получаем текущий тариф и дату next_payment_at
     row = await _fetchone(
         db,
-        "SELECT next_payment_at FROM subscriptions WHERE tg_id = ?",
+        "SELECT tariff, next_payment_at FROM subscriptions WHERE tg_id = ?",
         (tg_id,),
     )
+    old_tariff = row["tariff"] if row else None
     old_next_payment = row["next_payment_at"] if row else None
 
+    # Проверяем: это смена тарифа или продление?
+    is_tariff_change = old_tariff and old_tariff != "free" and old_tariff != tariff
+
     # Определяем новую дату следующего платежа
-    if old_next_payment:
+    if is_tariff_change:
+        # Смена тарифа → новый период с момента оплаты
+        next_payment_dt = now + timedelta(days=30)
+    elif old_next_payment:
         try:
             old_next_dt = datetime.fromisoformat(old_next_payment)
             # Если старая дата ещё не истекла — продлеваем от неё
