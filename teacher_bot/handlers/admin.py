@@ -137,7 +137,7 @@ async def edit_prompt_btn(call: CallbackQuery, db):
         return
 
     # Показываем промпт (обрезаем если слишком длинный)
-    preview = current_prompt[:3000] + ("..." if len(current_prompt) > 3000 else "")
+    preview = current_prompt[:4000] + ("..." if len(current_prompt) > 4000 else "")
     
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -400,7 +400,7 @@ async def cmd_prompt(message: Message, state: FSMContext, db, admin_tg_id: int):
         return
 
     # Показываем промпт (обрезаем если слишком длинный для одного сообщения)
-    preview = current_prompt[:3000] + ("..." if len(current_prompt) > 3000 else "")
+    preview = current_prompt[:4000] + ("..." if len(current_prompt) > 4000 else "")
     
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
