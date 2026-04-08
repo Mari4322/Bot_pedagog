@@ -131,8 +131,16 @@ async def prodamus_webhook(request: Request) -> Response:
     # Уведомляем пользователя
     if _bot:
         try:
-            from datetime import datetime, timezone, timedelta
-            next_pay = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%d.%m.%Y")
+            from datetime import datetime
+            from database.queries import get_subscription
+            # Получаем актуальную дату из БД после обновления
+            sub = await get_subscription(_db, tg_id)
+            if sub and sub.get("next_payment_at"):
+                next_pay_dt = datetime.fromisoformat(sub["next_payment_at"])
+                next_pay = next_pay_dt.strftime("%d.%m.%Y")
+            else:
+                next_pay = "—"
+            
             await _bot.send_message(
                 tg_id,
                 f"✅ <b>Оплата прошла успешно!</b>\n\n"

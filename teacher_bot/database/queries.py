@@ -331,10 +331,41 @@ async def update_subscription(
     """
     Вызывается после успешной оплаты (вебхук Продамуса).
     Обновляет подписку и активирует пользователя.
+    
+    Логика продления:
+      - Если old_next_payment_at ещё не истёк → new_next = old_next + 30 дней
+      - Если истёк или NULL → new_next = now + 30 дней
+    Таким образом, досрочная оплата сохраняет оставшиеся дни.
     """
     now = datetime.now(timezone.utc)
-    paid_at      = now.isoformat()
-    next_payment = (now + timedelta(days=30)).isoformat()
+    paid_at = now.isoformat()
+
+    # Получаем текущую дату next_payment_at
+    row = await _fetchone(
+        db,
+        "SELECT next_payment_at FROM subscriptions WHERE tg_id = ?",
+        (tg_id,),
+    )
+    old_next_payment = row["next_payment_at"] if row else None
+
+    # Определяем новую дату следующего платежа
+    if old_next_payment:
+        try:
+            old_next_dt = datetime.fromisoformat(old_next_payment)
+            # Если старая дата ещё не истекла — продлеваем от неё
+            if old_next_dt > now:
+                next_payment_dt = old_next_dt + timedelta(days=30)
+            else:
+                # Истекла — считаем от текущего момента
+                next_payment_dt = now + timedelta(days=30)
+        except (ValueError, TypeError):
+            # Некорректная дата — считаем от текущего момента
+            next_payment_dt = now + timedelta(days=30)
+    else:
+        # Первая оплата или next_payment_at = NULL
+        next_payment_dt = now + timedelta(days=30)
+
+    next_payment = next_payment_dt.isoformat()
 
     await db.execute(
         """
