@@ -93,6 +93,16 @@ def regen_comment_kb() -> InlineKeyboardMarkup:
     )
 
 
+def regen_comment_confirm_kb() -> InlineKeyboardMarkup:
+    """Клавиатура после ввода комментария — Далее или Назад к выбору хобби."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Далее", callback_data=SimpleCb(action="comment_next").pack())],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data=NavCb(to="regen_hobby_back").pack())],
+        ]
+    )
+
+
 def regen_summary_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

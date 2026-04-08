@@ -22,7 +22,7 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from database import queries as q
 from keyboards.callbacks import HobbyCb, NavCb, SimpleCb
-from keyboards.user_kb import after_answer_kb, regen_comment_kb, regen_pick_hobby_kb, regen_summary_kb
+from keyboards.user_kb import after_answer_kb, regen_comment_kb, regen_comment_confirm_kb, regen_pick_hobby_kb, regen_summary_kb
 from services.ai_service import AIResult, ServerAPIError, TimeoutAPIError, generate_response
 from states import Dialog
 
@@ -329,6 +329,12 @@ async def regen_skip_comment(call: CallbackQuery, state: FSMContext, db):
     await _show_regen_summary(call=call, state=state, db=db)
 
 
+@router.callback_query(Dialog.regen_comment, SimpleCb.filter(F.action == "comment_next"))
+async def regen_comment_next(call: CallbackQuery, state: FSMContext, db):
+    """Кнопка 'Далее' после ввода комментария — переход к summary."""
+    await _show_regen_summary(call=call, state=state, db=db)
+
+
 @router.message(Dialog.regen_comment)
 async def regen_comment_input(message: Message, state: FSMContext, db):
     comment = (message.text or "").strip()
@@ -339,30 +345,14 @@ async def regen_comment_input(message: Message, state: FSMContext, db):
         )
         return
     await state.update_data(regen_comment=comment if comment else None)
-
-    tg_id = message.from_user.id
-    data = await state.get_data()
-    child = await q.get_child(db, data.get("child_id"), tg_id)
-    if not child:
-        await message.answer("Не нашёл ребёнка. Нажмите /start.")
-        await state.clear()
-        return
-
-    hobby   = data.get("regen_hobby_text")
-    topic   = data.get("topic")
-    anxiety = data.get("anxiety")
-
-    text = (
-        f"👦 <b>{child['name']}, {child['age']} лет</b>\n"
-        f"🎯 Увлечение: <b>{hobby}</b>\n"
-        f"📚 Тема: <b>{topic}</b>\n"
-        f"😟 Тревожность: <b>{anxiety} из 10</b>"
+    
+    # Показываем сохранённый комментарий и предлагаем продолжить или вернуться назад
+    from keyboards.user_kb import regen_comment_confirm_kb
+    await message.answer(
+        f"💬 Комментарий сохранён:\n<b>«{comment}»</b>\n\n"
+        "Нажмите «Далее» чтобы продолжить или «Назад» для изменения увлечения.",
+        reply_markup=regen_comment_confirm_kb(),
     )
-    if comment:
-        text += f"\n💬 Комментарий: <b>«{comment}»</b>"
-
-    await message.answer(text, reply_markup=regen_summary_kb())
-    await state.set_state(Dialog.regen_summary)
 
 
 async def _show_regen_summary(*, call: CallbackQuery, state: FSMContext, db) -> None:
