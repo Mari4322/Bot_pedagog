@@ -25,7 +25,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from database.queries import get_user, set_admin, set_setting
+from database.queries import get_user, set_admin, set_setting, get_setting
 from keyboards.admin_kb import admin_input_cancel_kb, admin_menu_kb, models_kb
 from keyboards.callbacks import AdminCb, ModelCb
 from services.balance_service import get_balance
@@ -111,14 +111,16 @@ async def admin_back_to_menu(call: CallbackQuery, db, state: FSMContext):
 async def change_model_cmd(message: Message, db):
     if not await _require_admin(message, db):
         return
-    await message.answer("🔧 Выберите нейросеть:", reply_markup=models_kb(AVAILABLE_MODELS))
+    current = await get_setting(db, "current_model") or "openai/gpt-4o"
+    await message.answer(f"🔧 Текущая модель: <b>{current}</b>\nВыберите нейросеть:", reply_markup=models_kb(AVAILABLE_MODELS))
 
 
 @router.callback_query(AdminCb.filter(F.action == "change_model"))
 async def change_model_btn(call: CallbackQuery, db):
     if not await _require_admin_call(call, db):
         return
-    await call.message.edit_text("🔧 Выберите нейросеть:", reply_markup=models_kb(AVAILABLE_MODELS))
+    current = await get_setting(db, "current_model") or "openai/gpt-4o"
+    await call.message.edit_text(f"🔧 Текущая модель: <b>{current}</b>\nВыберите нейросеть:", reply_markup=models_kb(AVAILABLE_MODELS))
 
 
 @router.callback_query(AdminCb.filter(F.action == "edit_prompt"))
