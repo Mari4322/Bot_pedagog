@@ -24,3 +24,7 @@ class Pay(StatesGroup):
 class CancelSub(StatesGroup):
     confirm = State()            # пользователь подтверждает отписку
 
+
+class Admin(StatesGroup):
+    edit_prompt = State()        # редактирование системного промпта
+

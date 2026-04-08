@@ -10,6 +10,7 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🔧 Сменить модель",          callback_data=AdminCb(action="change_model").pack())],
+            [InlineKeyboardButton(text="📝 Редактировать промпт",     callback_data=AdminCb(action="edit_prompt").pack())],
             [InlineKeyboardButton(text="💰 Баланс polza.ai",          callback_data=AdminCb(action="balance").pack())],
             [InlineKeyboardButton(text="👥 Пользователи CSV",         callback_data=AdminCb(action="get_users").pack())],
             [InlineKeyboardButton(text="👶 Дети и увлечения CSV",     callback_data=AdminCb(action="get_children").pack())],

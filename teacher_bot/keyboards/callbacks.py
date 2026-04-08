@@ -30,7 +30,7 @@ class ModelCb(CallbackData, prefix="model"):
 
 
 class AdminCb(CallbackData, prefix="adm"):
-    action: str  # change_model | get_users | get_children | get_logs | add_admin | delete_admin | back_to_menu
+    action: str  # change_model | edit_prompt | balance | get_users | get_children | get_logs | add_admin | delete_admin | back_to_menu
 
 
 class TariffCb(CallbackData, prefix="tariff"):

@@ -120,6 +120,39 @@ async def change_model_btn(call: CallbackQuery, db):
     await call.message.edit_text("🔧 Выберите нейросеть:", reply_markup=models_kb(AVAILABLE_MODELS))
 
 
+@router.callback_query(AdminCb.filter(F.action == "edit_prompt"))
+async def edit_prompt_btn(call: CallbackQuery, db):
+    """Кнопка 'Редактировать промпт' из меню — показывает текущий промпт."""
+    if not await _require_admin_call(call, db):
+        return
+    
+    # Читаем текущий промпт
+    from pathlib import Path
+    prompt_path = Path(__file__).resolve().parent.parent / "prompt.txt"
+    try:
+        current_prompt = prompt_path.read_text(encoding="utf-8")
+    except Exception as e:
+        _log.error("Не удалось прочитать prompt.txt: %s", e)
+        await call.answer("❌ Ошибка чтения файла prompt.txt", show_alert=True)
+        return
+
+    # Показываем промпт (обрезаем если слишком длинный)
+    preview = current_prompt[:3000] + ("..." if len(current_prompt) > 3000 else "")
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить промпт", callback_data="admin_edit_prompt")],
+        [InlineKeyboardButton(text="◀️ Назад в меню", callback_data="admin_back_menu")],
+    ])
+
+    await call.message.edit_text(
+        f"📝 <b>Текущий системный промпт:</b>\n\n"
+        f"<code>{preview}</code>\n\n"
+        f"Символов: {len(current_prompt)}",
+        reply_markup=kb,
+    )
+
+
 @router.callback_query(ModelCb.filter())
 async def model_pick(call: CallbackQuery, callback_data: ModelCb, db):
     if not await _require_admin_call(call, db):
@@ -344,3 +377,100 @@ async def delete_admin_input(message: Message, state: FSMContext, db):
         f"✅ Пользователь <b>{tg_id}</b> больше не администратор.\n\n{_ADMIN_MENU_TEXT}",
         reply_markup=admin_menu_kb(),
     )
+
+
+# ─── /prompt — редактирование системного промпта ────────────────────────────
+
+@router.message(Command("prompt"))
+async def cmd_prompt(message: Message, state: FSMContext, db, admin_tg_id: int):
+    """Показывает текущий промпт и предлагает изменить."""
+    user = await get_user(db, message.from_user.id)
+    if not user or not user["is_admin"]:
+        await message.answer("⛔ Эта команда доступна только администраторам.")
+        return
+
+    # Читаем текущий промпт
+    from pathlib import Path
+    prompt_path = Path(__file__).resolve().parent.parent / "prompt.txt"
+    try:
+        current_prompt = prompt_path.read_text(encoding="utf-8")
+    except Exception as e:
+        _log.error("Не удалось прочитать prompt.txt: %s", e)
+        await message.answer("❌ Ошибка чтения файла prompt.txt")
+        return
+
+    # Показываем промпт (обрезаем если слишком длинный для одного сообщения)
+    preview = current_prompt[:3000] + ("..." if len(current_prompt) > 3000 else "")
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить промпт", callback_data="admin_edit_prompt")],
+        [InlineKeyboardButton(text="◀️ Назад в меню", callback_data="admin_back_menu")],
+    ])
+
+    await message.answer(
+        f"📝 <b>Текущий системный промпт:</b>\n\n"
+        f"<code>{preview}</code>\n\n"
+        f"Символов: {len(current_prompt)}",
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data == "admin_edit_prompt")
+async def admin_edit_prompt_start(call: CallbackQuery, state: FSMContext):
+    """Кнопка 'Изменить промпт' — переводит в состояние ввода."""
+    from states import Admin
+    await state.set_state(Admin.edit_prompt)
+    await call.message.edit_text(
+        "✏️ <b>Редактирование промпта</b>\n\n"
+        "Отправьте новый текст промпта одним сообщением.\n\n"
+        "Для отмены нажмите /cancel",
+    )
+
+
+@router.message(Admin.edit_prompt)
+async def admin_edit_prompt_save(message: Message, state: FSMContext, db):
+    """Сохраняет новый промпт в prompt.txt."""
+    if message.text and message.text.startswith("/cancel"):
+        await state.clear()
+        await message.answer(
+            f"❌ Изменение промпта отменено.\n\n{_ADMIN_MENU_TEXT}",
+            reply_markup=admin_menu_kb(),
+        )
+        return
+
+    new_prompt = message.text or ""
+    if len(new_prompt) < 50:
+        await message.answer(
+            "⚠️ Промпт слишком короткий (минимум 50 символов).\n\n"
+            "Попробуйте ещё раз или /cancel для отмены."
+        )
+        return
+
+    # Сохраняем промпт
+    from pathlib import Path
+    prompt_path = Path(__file__).resolve().parent.parent / "prompt.txt"
+    try:
+        prompt_path.write_text(new_prompt, encoding="utf-8")
+        _log.info("Админ %s обновил prompt.txt (%d символов)", message.from_user.id, len(new_prompt))
+    except Exception as e:
+        _log.error("Ошибка записи prompt.txt: %s", e)
+        await message.answer("❌ Не удалось сохранить промпт. Ошибка записи файла.")
+        await state.clear()
+        return
+
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Промпт успешно обновлён!</b>\n\n"
+        f"Новый размер: {len(new_prompt)} символов\n\n"
+        f"Изменения вступят в силу при следующей генерации.\n\n"
+        f"{_ADMIN_MENU_TEXT}",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data == "admin_back_menu")
+async def admin_back_to_menu(call: CallbackQuery):
+    """Возврат в админ-меню."""
+    await call.message.edit_text(_ADMIN_MENU_TEXT, reply_markup=admin_menu_kb())
+
